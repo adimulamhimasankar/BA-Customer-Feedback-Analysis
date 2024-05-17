@@ -1,0 +1,89 @@
+!pip install requests beautifulsoup4 pandas textblob sklearn wordcloud matplotlib
+
+#Code to Scrap Data
+
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+
+url = 'https://www.airlinequality.com/airline-reviews/british-airways/'
+response = requests.get(url)
+soup = BeautifulSoup(response.text, 'html.parser')
+
+reviews = soup.find_all('article', class_='comp_review')
+review_data = []
+
+for review in reviews:
+    title = review.find('h2').text.strip()
+    content = review.find('div', class_='text_content').text.strip()
+    rating = review.find('span', class_='rating-10')['class'][-1].split('_')[-1]
+    review_data.append({'Title': title, 'Content': content, 'Rating': int(rating)})
+
+df = pd.DataFrame(review_data)
+df.to_csv('ba_reviews.csv', index=False)
+
+#Load the data
+
+df = pd.read_csv('ba_reviews.csv')
+
+#Clean the text data
+
+import re
+
+def clean_text(text):
+    text = re.sub(r'[^\w\s]', '', text)
+    text = text.lower()
+    return text
+
+df['Cleaned_Content'] = df['Content'].apply(clean_text)
+
+#Perform Sentiment
+
+#from textblob import TextBlob
+
+def get_sentiment(text):
+    blob = TextBlob(text)
+    return blob.sentiment.polarity
+
+df['Sentiment'] = df['Cleaned_Content'].apply(get_sentiment)
+
+#Generate Word Cloud
+
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+
+text = ' '.join(df['Cleaned_Content'])
+wordcloud = WordCloud(width=800, height=400, background_color='white').generate(text)
+
+plt.figure(figsize=(10, 5))
+plt.imshow(wordcloud, interpolation='bilinear')
+plt.axis('off')
+plt.savefig('wordcloud.png')
+plt.show()
+
+#LDA
+
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.decomposition import LatentDirichletAllocation
+
+vectorizer = CountVectorizer(stop_words='english')
+X = vectorizer.fit_transform(df['Cleaned_Content'])
+
+lda = LatentDirichletAllocation(n_components=5, random_state=42)
+lda.fit(X)
+
+topics = lda.components_
+topic_words = {}
+for topic_idx, topic in enumerate(topics):
+    topic_words[topic_idx] = [vectorizer.get_feature_names_out()[i] for i in topic.argsort()[:-10 - 1:-1]]
+
+#visualizations
+
+plt.figure(figsize=(8, 6))
+df['Sentiment'].hist(bins=20)
+plt.title('Sentiment Distribution')
+plt.xlabel('Sentiment Score')
+plt.ylabel('Frequency')
+plt.savefig('sentiment_distribution.png')
+plt.show()
+
